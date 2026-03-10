@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pkl
+*.pth
+*.pt
+.env
+venv/
+dataset/
+data/
+runs/
+logs/

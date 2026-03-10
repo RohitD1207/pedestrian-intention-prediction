@@ -1,0 +1,29 @@
+import torch
+import torch.nn as nn
+import torchvision.models as models
+
+
+class ResNetEncoder(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+        resnet = models.resnet18(weights="IMAGENET1K_V1")
+
+        # remove classification head
+        self.backbone = nn.Sequential(
+            *list(resnet.children())[:-1]
+        )
+
+    def forward(self, x):
+
+        batch, seq, c, h, w = x.shape
+
+        # merge batch and sequence
+        x = x.view(batch * seq, c, h, w)
+
+        features = self.backbone(x)
+
+        features = features.view(batch, seq, 512)
+
+        return features
