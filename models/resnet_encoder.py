@@ -15,6 +15,10 @@ class ResNetEncoder(nn.Module):
             *list(resnet.children())[:-1]
         )
 
+        # freeze backbone
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
     def forward(self, x):
 
         batch, seq, c, h, w = x.shape
