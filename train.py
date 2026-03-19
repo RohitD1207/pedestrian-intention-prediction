@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 import os
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
 from datasets.data_loader import PIEDataset
 from models.resnet_encoder import ResNetEncoder
@@ -121,6 +122,9 @@ def main():
         lstm.train()
         running_loss = 0
 
+        all_preds = []
+        all_labels = []
+
         for features, label in feature_loader:
 
             features = features.to(device)
@@ -136,7 +140,32 @@ def main():
 
             running_loss += loss.item()
 
-        print(f"Epoch {epoch+1}/{epochs} | Loss: {running_loss/len(feature_loader):.4f}")
+            # convert logits → probabilities
+            probs = torch.sigmoid(logits)
+
+            preds = (probs > 0.5).float()
+
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(label.cpu().numpy())
+
+        # flatten arrays
+        all_preds = [p[0] for p in all_preds]
+        all_labels = [l[0] for l in all_labels]
+
+        # compute metrics
+        acc = accuracy_score(all_labels, all_preds)
+        prec = precision_score(all_labels, all_preds)
+        rec = recall_score(all_labels, all_preds)
+        f1 = f1_score(all_labels, all_preds)
+
+        print(
+            f"Epoch {epoch+1}/{epochs} | "
+            f"Loss: {running_loss/len(feature_loader):.4f} | "
+            f"Acc: {acc:.4f} | "
+            f"Precision: {prec:.4f} | "
+            f"Recall: {rec:.4f} | "
+            f"F1: {f1:.4f}"
+        )
 
 
 if __name__ == "__main__":
