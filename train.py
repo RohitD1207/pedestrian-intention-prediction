@@ -4,10 +4,12 @@ from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 import os
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.model_selection import train_test_split
 
 from datasets.data_loader import PIEDataset
 from models.resnet_encoder import ResNetEncoder
 from models.lstm import LSTMModel
+from models.mc_dropout import monte_carlo_dropout
 
 
 def main():
@@ -89,14 +91,30 @@ def main():
     # NEW DATASET (features)
     # ------------------------
 
-    feature_dataset = TensorDataset(features_tensor, labels_tensor)
+    X = features_tensor
+    y = labels_tensor
 
-    feature_loader = DataLoader(
-        feature_dataset,
-        batch_size=32,
-        shuffle=True
+    X_train, X_val, y_train, y_val = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42
     )
 
+    train_dataset = TensorDataset(X_train, y_train)
+    val_dataset   = TensorDataset(X_val, y_val)
+
+    train_loader = DataLoader(
+    train_dataset,
+    batch_size=32,
+    shuffle=True
+)
+
+    val_loader = DataLoader(
+    val_dataset,
+    batch_size=32,
+    shuffle=False   # VERY IMPORTANT
+)
 
     # ------------------------
     # Loss + Optimizer
@@ -160,7 +178,7 @@ def main():
             all_preds = []
             all_labels = []
 
-            for features, label in feature_loader:
+            for features, label in train_loader:
 
                 features = features.to(device)
                 label = label.float().unsqueeze(1).to(device)
@@ -191,7 +209,7 @@ def main():
 
             print(
                 f"Epoch {epoch+1}/{epochs} | "
-                f"Loss: {running_loss/len(feature_loader):.4f} | "
+                f"Loss: {running_loss/len(train_loader):.4f} | "
                 f"Acc: {acc:.4f} | "
                 f"Precision: {prec:.4f} | "
                 f"Recall: {rec:.4f} | "
@@ -205,6 +223,21 @@ def main():
                 print("🔥 Saved BEST model")
 
         print(f"Training complete. Best F1: {best_f1:.4f}")
+
+    # ------------------------
+    # MC DROPOUT
+    # ------------------------
+
+    print("\nRunning MC Dropout...")
+
+    mean_preds, uncertainties, labels, brier = monte_carlo_dropout(
+        lstm,
+        val_loader,
+        device,
+        T=30
+    )
+
+    print(f"Brier Score: {brier:.4f}")
 
 
 if __name__ == "__main__":
