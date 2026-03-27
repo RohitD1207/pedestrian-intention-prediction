@@ -4,9 +4,6 @@ from sklearn.metrics import brier_score_loss
 
 
 def enable_mc_dropout(model):
-    """
-    Enable dropout layers during inference while keeping BatchNorm in eval mode.
-    """
     model.train()
 
     for m in model.modules():
