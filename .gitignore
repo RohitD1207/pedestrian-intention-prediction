@@ -3,8 +3,8 @@ __pycache__/
 *.pkl
 *.pth
 *.pt
-.env
-.csv
+*.env
+*.csv
 venv/
 dataset/
 data/
