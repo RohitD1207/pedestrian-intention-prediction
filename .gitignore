@@ -4,6 +4,7 @@ __pycache__/
 *.pth
 *.pt
 .env
+.csv
 venv/
 dataset/
 data/

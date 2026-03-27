@@ -2,7 +2,7 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import os
 
-annotation_dir = "data\\PIE_clips\\annotations\\annotations\\set01"
+annotation_dir = "data\\PIE_clips\\annotations\\annotations\\set03"
 
 rows = []
 

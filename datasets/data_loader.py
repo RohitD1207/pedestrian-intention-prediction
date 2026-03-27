@@ -49,6 +49,7 @@ class PIEDataset(Dataset):
         video_name = row["video"]
         frame = int(row["frame"])
         label = int(row["label"])
+        pid = int(row["pedestrian_id"])
 
         x1, y1, x2, y2 = int(row["x1"]), int(row["y1"]), int(row["x2"]), int(row["y2"])
 
@@ -73,4 +74,4 @@ class PIEDataset(Dataset):
 
         sequence = torch.stack(sequence)
 
-        return sequence, torch.tensor(label)
+        return sequence, torch.tensor(label), pid
