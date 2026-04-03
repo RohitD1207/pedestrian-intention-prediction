@@ -16,6 +16,16 @@ os.environ["OPENCV_LOG_LEVEL"] = "FATAL" # This silences the warnings
 # Define Constants
 MODEL_PATH = "lstm_model.pt"
 
+def get_train_statistics(train_features_tensor):
+    # Collapse [Samples, 16, 512] -> [Samples, 512] for stability
+    features = train_features_tensor.mean(dim=1).numpy()
+    mean = np.mean(features, axis=0)
+    cov = np.cov(features, rowvar=False)
+    # Regularization for matrix stability
+    cov += np.eye(cov.shape[0]) * 1e-6 
+    inv_cov = np.linalg.inv(cov)
+    return mean, inv_cov
+
 def main():
     # 1. Clear memory and define device
     gc.collect()
@@ -116,6 +126,11 @@ def main():
     train_dataset = TensorDataset(features_tensor[train_mask], labels_tensor[train_mask])
     val_dataset = TensorDataset(features_tensor[val_mask], labels_tensor[val_mask])
     test_dataset = TensorDataset(features_tensor[test_mask], labels_tensor[test_mask])
+
+    # Calculate statistics for Mahalanobis distance using training features
+    print("\nGenerating Training Statistics for Mahalanobis...")
+    train_feat_raw = features_tensor[train_mask] 
+    t_mean, t_inv_cov = get_train_statistics(train_feat_raw)
 
     # CRITICAL: Free RAM
     del features_tensor
@@ -218,14 +233,27 @@ def main():
                 print(f"⭐ New Best Val F1: {val_f1:.4f} - Model Saved")
 
     # ------------------------
-    # MC DROPOUT
+    # MC DROPOUT + UNCERTAINTY
     # ------------------------
-    print("\nRunning MC Dropout...")
-    # Ensure your monte_carlo_dropout function handles .to(device) internally
-    mean_preds, uncertainties, labels, brier = monte_carlo_dropout(
-        lstm, val_loader, device, T=30
+    print("\nRunning MC Dropout & Uncertainty Analysis...")
+    
+    # We pass the t_mean and t_inv_cov we calculated earlier
+    # Note: Using test_loader for final evaluation is standard
+    mean_preds, kl_divs, md_dist, test_labels, brier = monte_carlo_dropout(
+        lstm, 
+        test_loader, 
+        device, 
+        T=30,
+        train_mean=t_mean,
+        train_inv_cov=t_inv_cov
     )
-    print(f"Brier Score: {brier:.4f}")
+    
+    print(f"Brier Score: {float(brier):.4f}")
+    print(f"Avg KL Divergence (Epistemic): {np.mean(kl_divs):.4f}")
+    if md_dist is not None:
+        print(f"Avg Mahalanobis Distance (OOD): {np.mean(md_dist):.4f}")
+    np.savez("final_results.npz", probs=mean_preds, kl=kl_divs, md=md_dist, labels=test_labels)
+    print("Results saved to final_results.npz")
 
 if __name__ == "__main__":
     main()
