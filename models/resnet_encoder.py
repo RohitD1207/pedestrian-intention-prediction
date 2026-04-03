@@ -20,14 +20,5 @@ class ResNetEncoder(nn.Module):
             param.requires_grad = False
 
     def forward(self, x):
-
-        batch, seq, c, h, w = x.shape
-
-        # merge batch and sequence
-        x = x.view(batch * seq, c, h, w)
-
         features = self.backbone(x)
-
-        features = features.view(batch, seq, 512)
-
         return features

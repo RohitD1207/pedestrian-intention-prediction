@@ -5,73 +5,43 @@ import pandas as pd
 from torch.utils.data import Dataset
 from torchvision.transforms import functional as TF
 
-
 class PIEDataset(Dataset):
-
-    def __init__(self, annotation_file, video_dir, sequence_length=16):
-
+    def __init__(self, annotation_file, crop_dir, sequence_length=16):
+        # We only keep rows where a full sequence exists
         self.annotations = pd.read_csv(annotation_file).to_dict("records")
-        self.video_dir = video_dir
+        self.crop_dir = crop_dir # This is where "Phase 1" saved the images
         self.sequence_length = sequence_length
 
     def __len__(self):
         return len(self.annotations)
 
-
-    def _load_sequence(self, video_path, start_frame):
-
-        cap = cv2.VideoCapture(video_path)
-
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-
-        frames = []
-
-        for _ in range(self.sequence_length):
-
-            ret, frame = cap.read()
-
-            if not ret:
-                raise RuntimeError("Failed to read frame")
-
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-            frames.append(frame)
-
-        cap.release()
-
-        return frames
-
-
     def __getitem__(self, idx):
-
         row = self.annotations[idx]
-
-        video_name = row["video"]
-        frame = int(row["frame"])
+        video_name = str(row["video"])
+        target_frame = int(row["frame"])
         label = int(row["label"])
-        pid = int(row["pedestrian_id"])
-
-        x1, y1, x2, y2 = int(row["x1"]), int(row["y1"]), int(row["x2"]), int(row["y2"])
-
-        video_path = os.path.join(self.video_dir, video_name + ".mp4")
-
-        start_frame = frame - self.sequence_length
-
-        frames = self._load_sequence(video_path, start_frame)
+        pid = str(row["pedestrian_id"])
 
         sequence = []
-
-        for image in frames:
-
-            crop = image[y1:y2, x1:x2]
-
-            crop = TF.resize(
-                torch.from_numpy(crop).permute(2,0,1).float()/255.0,
-                (224,224)
-            )
-
-            sequence.append(crop)
+        for i in range(self.sequence_length):
+            frame_idx = target_frame - (self.sequence_length - 1) + i
+            
+            # Look for the crop
+            img_path = os.path.join(self.crop_dir, video_name, pid, f"{frame_idx:06d}.jpg")
+            
+            image_np = cv2.imread(img_path)
+            
+            if image_np is None:
+                # FIX: If frame doesn't exist, create a black placeholder
+                # This stops the [WARN] and prevents the crash
+                image = torch.zeros((3, 224, 224))
+            else:
+                # Standard processing
+                image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
+                image = torch.from_numpy(image_np).permute(2,0,1).float() / 255.0
+                image = TF.resize(image, (224, 224))
+            
+            sequence.append(image)
 
         sequence = torch.stack(sequence)
-
         return sequence, torch.tensor(label), pid

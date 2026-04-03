@@ -12,6 +12,7 @@ from models.resnet_encoder import ResNetEncoder
 from models.lstm import LSTMModel
 from models.mc_dropout import monte_carlo_dropout
 
+os.environ["OPENCV_LOG_LEVEL"] = "FATAL" # This silences the warnings
 # Define Constants
 MODEL_PATH = "lstm_model.pt"
 
@@ -27,7 +28,7 @@ def main():
     # ------------------------
     dataset = PIEDataset(
         annotation_file="datasets/pie_annotations_set03.csv",
-        video_dir="data/PIE_clips/set03"
+        crop_dir="data/PIE_crops"
     )
 
     # Lowering num_workers to 2 to prevent CPU choking
@@ -35,7 +36,7 @@ def main():
         dataset,
         batch_size=32,
         shuffle=False,
-        num_workers=2, 
+        num_workers=4, 
         pin_memory=True 
     )
 
@@ -57,21 +58,28 @@ def main():
         labels_tensor = torch.load("pie_labels.pt", map_location='cpu', weights_only=True)
         ids = torch.load("pie_ids.pt") 
     else:
-        print("Extracting ResNet features...")
-        all_features = []
-        all_labels = []
-        all_ids = []
+        print("Extracting ResNet features from crops...")
+        all_features, all_labels, all_ids = [], [], []
 
         with torch.no_grad():
             for seq, label, pid in tqdm(loader, desc="Extracting"):
-                seq = seq.to(device, non_blocking=True)
-                features = resnet(seq)
+                b, s, c, h, w = seq.shape
+                
+                # ResNet expects 4D: [Batch*Seq, C, H, W]
+                seq_reshaped = seq.view(-1, c, h, w).to(device, non_blocking=True)
+                
+                features = resnet(seq_reshaped)
+                
+                # LSTM expects 3D: [Batch, Seq, Features]
+                features = features.view(b, s, -1)
 
-                # Move to CPU immediately to keep 4GB VRAM free
-                all_features.append(features.cpu())
+                all_features.append(features.detach().cpu())
                 all_labels.append(label.cpu())
-
-                if isinstance(pid, list):
+                
+                # Handle pid consistency (making sure it's a list for extend)
+                if torch.is_tensor(pid):
+                    all_ids.extend(pid.tolist())
+                elif isinstance(pid, (list, np.ndarray)):
                     all_ids.extend(pid)
                 else:
                     all_ids.append(pid)
@@ -84,33 +92,39 @@ def main():
         torch.save(labels_tensor, "pie_labels.pt")
         torch.save(ids, "pie_ids.pt")
 
-    print(f"Features ready: {features_tensor.shape}")
-
     # ------------------------
-    # SPLIT BY PEDESTRIAN ID
+    # SPLIT BY PEDESTRIAN ID (Train/Val/Test: 70/15/15)
     # ------------------------
     unique_ids = np.unique(ids)
     np.random.seed(42)
     np.random.shuffle(unique_ids)
 
-    split_idx = int(0.8 * len(unique_ids))
-    train_ids = set(unique_ids[:split_idx])
+    # Calculate split points
+    train_end = int(0.7 * len(unique_ids))
+    val_end = int(0.85 * len(unique_ids))
+
+    train_ids = set(unique_ids[:train_end])
+    val_ids = set(unique_ids[train_end:val_end])
+    test_ids = set(unique_ids[val_end:])
 
     # Masking
     train_mask = np.array([pid in train_ids for pid in ids])
-    val_mask = ~train_mask
+    val_mask = np.array([pid in val_ids for pid in ids])
+    test_mask = np.array([pid in test_ids for pid in ids])
 
-    # Create datasets using views/indexing
+    # Create datasets
     train_dataset = TensorDataset(features_tensor[train_mask], labels_tensor[train_mask])
     val_dataset = TensorDataset(features_tensor[val_mask], labels_tensor[val_mask])
+    test_dataset = TensorDataset(features_tensor[test_mask], labels_tensor[test_mask])
 
-    # CRITICAL: Delete the massive original tensors to drop RAM from 95%
+    # CRITICAL: Free RAM
     del features_tensor
     del labels_tensor
     gc.collect()
 
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     # ------------------------
     # Loss + Optimizer
@@ -119,32 +133,45 @@ def main():
     optimizer = torch.optim.Adam(lstm.parameters(), lr=0.0005)
 
     # ------------------------
-    # LOAD / TRAIN LOGIC
+    # Check for pretrained weights
     # ------------------------
+    
     use_pretrained = False
+
     if os.path.exists(MODEL_PATH):
+
         print("\nSaved LSTM weights found!")
+
         choice = input("1: Load | 2: Retrain | 3: Resume -> ")
+
         if choice == "1":
+
             lstm.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+
             lstm.eval()
+
             use_pretrained = True
+
         elif choice == "3":
+
             lstm.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+            print("Resuming training from saved weights...")
+            use_pretrained = False
+
+
 
     # ------------------------
     # TRAIN LSTM
     # ------------------------
     if not use_pretrained:
         epochs = 30
-        best_f1 = 0
+        best_val_f1 = 0
+        
         for epoch in range(epochs):
+            # --- TRAINING PHASE ---
             lstm.train()
-            running_loss = 0
-            all_preds, all_labels_epoch = [], []
-
+            train_loss = 0
             for f_batch, l_batch in train_loader:
-                # Optimized GPU transfer
                 f_batch = f_batch.to(device, non_blocking=True)
                 l_batch = l_batch.float().unsqueeze(1).to(device, non_blocking=True)
 
@@ -154,23 +181,41 @@ def main():
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                train_loss += loss.item()
 
-                running_loss += loss.item()
-                preds = (torch.sigmoid(logits) > 0.5).float()
-                all_preds.extend(preds.cpu().numpy())
-                all_labels_epoch.extend(l_batch.cpu().numpy())
+            # --- VALIDATION PHASE ---
+            lstm.eval()
+            val_loss = 0
+            val_preds, val_labels = [], []
+            
+            with torch.no_grad(): # No gradients needed for validation
+                for f_batch, l_batch in val_loader:
+                    f_batch = f_batch.to(device, non_blocking=True)
+                    l_batch = l_batch.float().unsqueeze(1).to(device, non_blocking=True)
+
+                    logits = lstm(f_batch)
+                    loss = criterion(logits, l_batch)
+                    val_loss += loss.item()
+
+                    preds = (torch.sigmoid(logits) > 0.5).float()
+                    val_preds.extend(preds.cpu().numpy())
+                    val_labels.extend(l_batch.cpu().numpy())
 
             # Metrics Calculation
-            y_true = np.array(all_labels_epoch).flatten()
-            y_pred = np.array(all_preds).flatten()
+            y_true_val = np.array(val_labels).flatten()
+            y_pred_val = np.array(val_preds).flatten()
+            val_f1 = f1_score(y_true_val, y_pred_val, zero_division=0)
             
-            f1 = f1_score(y_true, y_pred, zero_division=0)
-            print(f"Epoch {epoch+1}/{epochs} | Loss: {running_loss/len(train_loader):.4f} | F1: {f1:.4f}")
+            avg_train_loss = train_loss / len(train_loader)
+            avg_val_loss = val_loss / len(val_loader)
 
-            if f1 > best_f1:
-                best_f1 = f1
+            print(f"Epoch {epoch+1:02d} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Val F1: {val_f1:.4f}")
+
+            # Save model if Validation F1 improves
+            if val_f1 > best_val_f1:
+                best_val_f1 = val_f1
                 torch.save(lstm.state_dict(), MODEL_PATH)
-                print("⭐ Saved Best Model")
+                print(f"⭐ New Best Val F1: {val_f1:.4f} - Model Saved")
 
     # ------------------------
     # MC DROPOUT

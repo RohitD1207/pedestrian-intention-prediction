@@ -4,6 +4,7 @@ from sklearn.metrics import brier_score_loss
 
 
 def enable_mc_dropout(model):
+    
     model.train()
 
     for m in model.modules():
