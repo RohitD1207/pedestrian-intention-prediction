@@ -181,3 +181,29 @@ fig.legend(handles, labels, loc='lower center', ncol=2, fontsize=12, frameon=Tru
 plt.tight_layout()
 plt.savefig("results/integrated_safety_analysis.png", bbox_inches='tight', dpi=300)
 plt.show()
+
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+
+def calculate_tradeoff(y_true, y_probs, md_scores, threshold=30):
+    # Original Predictions (Full Dataset)
+    y_pred_orig = (y_probs > 0.5).astype(int)
+    
+    # Filtered Predictions (Only 'Trusted' Samples)
+    mask = md_scores < threshold
+    y_true_filt = y_true[mask]
+    y_probs_filt = y_probs[mask]
+    y_pred_filt = (y_probs_filt > 0.5).astype(int)
+    
+    # Calculate % of data kept
+    coverage = (np.sum(mask) / len(y_true)) * 100
+    
+    print(f"--- Trade-off Analysis (Threshold MD < {threshold}) ---")
+    print(f"Data Coverage: {coverage:.2f}% (Discarded {100-coverage:.2f}% as 'Too Risky')")
+    print("-" * 30)
+    print(f"Metric    | Original | Filtered")
+    print(f"Accuracy  | {accuracy_score(y_true, y_pred_orig):.4f}   | {accuracy_score(y_true_filt, y_pred_filt):.4f}")
+    print(f"F1-Score  | {f1_score(y_true, y_pred_orig):.4f}   | {f1_score(y_true_filt, y_pred_filt):.4f}")
+    print(f"Precision | {precision_score(y_true, y_pred_orig):.4f}   | {precision_score(y_true_filt, y_pred_filt):.4f}")
+    print(f"Recall    | {recall_score(y_true, y_pred_orig):.4f}   | {recall_score(y_true_filt, y_pred_filt):.4f}")
+
+calculate_tradeoff(y_true, y_probs, md_scores, threshold=30)
