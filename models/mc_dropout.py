@@ -62,7 +62,7 @@ def monte_carlo_dropout(model, dataloader, device, T=30, train_mean=None, train_
     final_means = np.concatenate(all_mean_preds)
     final_labels = np.concatenate(all_labels)
     final_kl = np.concatenate(all_kl_div)
-    final_md = np.array(all_mahalanobis) if all_mahalanobis else None
+    final_md = np.array(all_mahalanobis) if all_mahalanobis else np.full_like(final_means, np.nan)
 
     # 2. Calculate Brier Score (Calibration Metric)
     # This measures how 'accurate' your probabilities are

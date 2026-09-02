@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import sys
+import argparse
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +27,12 @@ from models.Gat import GATModel
 BATCH_SIZE = 1
 MODEL_PATH = PROJECT_ROOT / "checkpoints" / "gat_best.pth"
 
+parser = argparse.ArgumentParser(description="Evaluate the pedestrian-intention GAT model.")
+parser.add_argument("--max-samples", type=int, default=0)
+parser.add_argument("--sequence-length", type=int, default=16)
+parser.add_argument("--imgsz", type=int, default=320)
+args = parser.parse_args()
+
 if not MODEL_PATH.is_file():
     raise FileNotFoundError(
         f"GAT checkpoint not found at {MODEL_PATH}. "
@@ -39,17 +46,23 @@ DEVICE = torch.device(
 
 test_dataset = PIEDataset(
     annotation_file=PROJECT_ROOT / "datasets" / "pie_annotations_set03.csv",
-    crop_dir=PROJECT_ROOT / "data" / "PIE_crops"
+    crop_dir=PROJECT_ROOT / "data" / "PIE_crops",
+    sequence_length=args.sequence_length
 )
 
 test_loader = DataLoader(
-    test_dataset,
+    test_dataset if args.max_samples <= 0 else torch.utils.data.Subset(
+        test_dataset,
+        range(min(args.max_samples, len(test_dataset)))
+    ),
     batch_size=BATCH_SIZE,
     shuffle=False
 )
 
 pose_extractor = PoseExtractor(
-    model_name=str(PROJECT_ROOT / "yolo11n-pose.pt")
+    model_name=str(PROJECT_ROOT / "yolo11n-pose.pt"),
+    device=DEVICE,
+    image_size=args.imgsz
 )
 
 model = GATModel()

@@ -1,8 +1,9 @@
-import os
+import argparse
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -17,36 +18,41 @@ from models.graph_builder import build_graph
 from models.Gat import GATModel
 
 
-# ============================================================
-# 1. CONFIGURATION
-# ============================================================
-
 BATCH_SIZE = 1
-EPOCHS = 30
+DEFAULT_EPOCHS = 30
 LEARNING_RATE = 0.001
+
+parser = argparse.ArgumentParser(description="Train the pedestrian-intention GAT model.")
+parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
+parser.add_argument("--max-samples", type=int, default=0)
+parser.add_argument("--sequence-length", type=int, default=16)
+parser.add_argument("--imgsz", type=int, default=320)
+args = parser.parse_args()
+EPOCHS = args.epochs
 
 DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
 
 MODEL_PATH = PROJECT_ROOT / "checkpoints" / "gat_best.pth"
-
 MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-# ============================================================
-# 2. DATASET
-# ============================================================
-
 train_dataset = PIEDataset(
     annotation_file=PROJECT_ROOT / "datasets" / "pie_annotations_set01.csv",
-    crop_dir=PROJECT_ROOT / "data" / "PIE_crops"
+    crop_dir=PROJECT_ROOT / "data" / "PIE_crops",
+    sequence_length=args.sequence_length
 )
 
 val_dataset = PIEDataset(
     annotation_file=PROJECT_ROOT / "datasets" / "pie_annotations_set03.csv",
-    crop_dir=PROJECT_ROOT / "data" / "PIE_crops"
+    crop_dir=PROJECT_ROOT / "data" / "PIE_crops",
+    sequence_length=args.sequence_length
 )
+
+if args.max_samples > 0:
+    train_dataset = torch.utils.data.Subset(train_dataset, range(min(args.max_samples, len(train_dataset))))
+    val_dataset = torch.utils.data.Subset(val_dataset, range(min(args.max_samples, len(val_dataset))))
 
 
 train_loader = DataLoader(
@@ -62,27 +68,14 @@ val_loader = DataLoader(
 )
 
 
-# ============================================================
-# 3. POSE EXTRACTOR
-# ============================================================
-
 pose_extractor = PoseExtractor(
-    model_name=str(PROJECT_ROOT / "yolo11n-pose.pt")
+    model_name=str(PROJECT_ROOT / "yolo11n-pose.pt"),
+    device=DEVICE,
+    image_size=args.imgsz
 )
 
 
-# ============================================================
-# 4. GAT MODEL
-# ============================================================
-
-model = GATModel()
-
-model = model.to(DEVICE)
-
-
-# ============================================================
-# 5. LOSS + OPTIMIZER
-# ============================================================
+model = GATModel().to(DEVICE)
 
 criterion = nn.CrossEntropyLoss()
 
@@ -91,10 +84,6 @@ optimizer = Adam(
     lr=LEARNING_RATE
 )
 
-
-# ============================================================
-# 6. TRAINING
-# ============================================================
 
 best_val_accuracy = -1.0
 
@@ -109,52 +98,24 @@ for epoch in range(EPOCHS):
 
     for sequence, labels, _ in train_loader:
 
-        # ----------------------------------------------------
-        # Get data
-        # ----------------------------------------------------
-
-        labels = labels.to(DEVICE)
-
-
-        # ----------------------------------------------------
-        # Pose extraction
-        # ----------------------------------------------------
+        label = labels.long().to(DEVICE)
 
         pose = pose_extractor.extract(sequence[0])
 
-
-        # ----------------------------------------------------
-        # Build graph
-        # ----------------------------------------------------
-
         node_features, edge_index = build_graph(pose)
-
-
-        # ----------------------------------------------------
-        # Move graph to GPU
-        # ----------------------------------------------------
 
         node_features = node_features.to(DEVICE)
         edge_index = edge_index.to(DEVICE)
 
+        output = model(
+            node_features,
+            edge_index
+        )
 
-        # ----------------------------------------------------
-        # Forward pass
-        # ----------------------------------------------------
-
-        output = model(node_features, edge_index)
-
-
-        # ----------------------------------------------------
-        # Loss
-        # ----------------------------------------------------
-
-        loss = criterion(output, labels)
-
-
-        # ----------------------------------------------------
-        # Backpropagation
-        # ----------------------------------------------------
+        loss = criterion(
+            output,
+            label
+        )
 
         optimizer.zero_grad()
 
@@ -162,28 +123,19 @@ for epoch in range(EPOCHS):
 
         optimizer.step()
 
-
-        # ----------------------------------------------------
-        # Statistics
-        # ----------------------------------------------------
-
         total_loss += loss.item()
 
-        predictions = torch.argmax(output, dim=1)
+        prediction = torch.argmax(output, dim=1)
 
         correct += (
-            predictions == labels
+            prediction == label
         ).sum().item()
 
-        total += labels.size(0)
+        total += label.numel()
 
 
     train_accuracy = correct / total
 
-
-    # ========================================================
-    # 7. VALIDATION
-    # ========================================================
 
     model.eval()
 
@@ -194,7 +146,7 @@ for epoch in range(EPOCHS):
 
         for sequence, labels, _ in val_loader:
 
-            labels = labels.to(DEVICE)
+            label = labels.long().to(DEVICE)
 
             pose = pose_extractor.extract(sequence[0])
 
@@ -203,28 +155,24 @@ for epoch in range(EPOCHS):
             node_features = node_features.to(DEVICE)
             edge_index = edge_index.to(DEVICE)
 
-            output = model(node_features, edge_index)
-
-            predictions = torch.argmax(
-                output,
-                dim=1
+            output = model(
+                node_features,
+                edge_index
             )
 
+            prediction = torch.argmax(output, dim=1)
+
             val_correct += (
-                predictions == labels
+                prediction == label
             ).sum().item()
 
-            val_total += labels.size(0)
+            val_total += label.numel()
 
 
     val_accuracy = val_correct / val_total
 
-
-    # ========================================================
-    # 8. PRINT RESULTS
-    # ========================================================
-
     average_loss = total_loss / len(train_loader)
+
 
     print(
         f"Epoch [{epoch + 1}/{EPOCHS}] "
@@ -233,10 +181,6 @@ for epoch in range(EPOCHS):
         f"Val Acc: {val_accuracy:.4f}"
     )
 
-
-    # ========================================================
-    # 9. SAVE BEST MODEL
-    # ========================================================
 
     if val_accuracy > best_val_accuracy:
 
@@ -247,13 +191,8 @@ for epoch in range(EPOCHS):
             MODEL_PATH
         )
 
-        print(
-            f"Best GAT model saved → {MODEL_PATH}"
-        )
-
 
 print("\nTraining completed.")
-
 print(
     f"Best validation accuracy: "
     f"{best_val_accuracy:.4f}"

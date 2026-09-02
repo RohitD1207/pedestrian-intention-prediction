@@ -4,8 +4,9 @@ from ultralytics import YOLO
 
 class PoseExtractor:
 
-    def __init__(self, model_name="yolo11n-pose.pt", device=None):
+    def __init__(self, model_name="yolo11n-pose.pt", device=None, image_size=320):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.image_size = image_size
 
         self.model = YOLO(model_name)
 
@@ -22,6 +23,7 @@ class PoseExtractor:
         results = self.model(
             frames,
             device=self.device,
+            imgsz=self.image_size,
             verbose=False
         )
 

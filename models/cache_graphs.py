@@ -10,7 +10,7 @@ from models.pose_extracter import PoseExtractor
 from models.graph_builder import build_graph
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 ANNOTATION_FILE = PROJECT_ROOT / "datasets" / "pie_annotations_set01.csv"
 CROP_DIR = PROJECT_ROOT / "data" / "PIE_crops"
@@ -131,6 +131,7 @@ def main():
     print(f"Test: {len(test_indices)}")
 
     pose_model = PoseExtractor(
+        model_name=str(PROJECT_ROOT / "yolo11n-pose.pt"),
         device=device
     )
 

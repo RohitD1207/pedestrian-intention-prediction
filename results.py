@@ -9,6 +9,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 RESULTS_DIR = PROJECT_ROOT / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
+
+def safe_calibration_curve(y_true, y_probs, n_bins=10):
+    if len(y_true) == 0 or np.unique(y_true).size < 2:
+        return np.array([]), np.array([])
+    return calibration_curve(y_true, y_probs, n_bins=n_bins)
+
 # Load the data
 data = np.load(PROJECT_ROOT / "final_results.npz")
 
@@ -24,9 +30,9 @@ def generate_visual_report(y_true, y_probs, kl_scores, md_scores):
     
     metrics = {
         "Accuracy": accuracy_score(y_true, y_pred),
-        "Precision": precision_score(y_true, y_pred),
-        "Recall": recall_score(y_true, y_pred),
-        "F1-Score": f1_score(y_true, y_pred)
+        "Precision": precision_score(y_true, y_pred, zero_division=0),
+        "Recall": recall_score(y_true, y_pred, zero_division=0),
+        "F1-Score": f1_score(y_true, y_pred, zero_division=0)
     }
     
     print("--- Standard Performance Metrics ---")
@@ -60,7 +66,7 @@ def generate_visual_report(y_true, y_probs, kl_scores, md_scores):
     plt.savefig(RESULTS_DIR / "mahalanobis_distribution.png")
 
     # 5. Reliability Diagram (Calibration Plot)
-    prob_true, prob_pred = calibration_curve(y_true, y_probs, n_bins=10)
+    prob_true, prob_pred = safe_calibration_curve(y_true, y_probs)
     plt.figure()
     plt.plot(prob_pred, prob_true, marker='o', label='Model')
     plt.plot([0, 1], [0, 1], linestyle='--', label='Perfect Calibration')
@@ -87,11 +93,11 @@ def plot_filtered_reliability(y_true, y_probs, md_scores, threshold=50):
     plt.figure(figsize=(10, 6))
     
     # Original (from your current graph)
-    prob_true, prob_pred = calibration_curve(y_true, y_probs, n_bins=10)
+    prob_true, prob_pred = safe_calibration_curve(y_true, y_probs)
     plt.plot(prob_pred, prob_true, marker='o', label="Original Model")
     
     # Filtered (The 'Fixed' version)
-    prob_true_filtered, prob_pred_filtered = calibration_curve(y_true_filtered, y_probs_filtered, n_bins=10)
+    prob_true_filtered, prob_pred_filtered = safe_calibration_curve(y_true_filtered, y_probs_filtered)
     plt.plot(prob_pred_filtered, prob_true_filtered, marker='o', label=f"Filtered (MD < {threshold})")
     
     plt.plot([0, 1], [0, 1], "k--", label="Perfect Calibration")
@@ -128,7 +134,8 @@ filtered_ece = calculate_ece(y_true_filtered, y_probs_filtered)
 
 print(f"Original Model ECE: {original_ece:.4f}")
 print(f"Filtered (MD < 30) ECE: {filtered_ece:.4f}")
-print(f"Improvement: {((original_ece - filtered_ece) / original_ece) * 100:.2f}%")
+improvement = ((original_ece - filtered_ece) / original_ece * 100) if original_ece else 0.0
+print(f"Improvement: {improvement:.2f}%")
 
 
 # 1. Define masks (Same as before)
