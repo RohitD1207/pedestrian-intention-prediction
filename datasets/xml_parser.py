@@ -1,8 +1,10 @@
 import xml.etree.ElementTree as ET
 import pandas as pd
 import os
+from pathlib import Path
 
-annotation_dir = "data\\PIE_clips\\annotations\\annotations\\set03"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+annotation_dir = PROJECT_ROOT / "data" / "PIE_clips" / "annotations" / "annotations" / "set01"
 
 rows = []
 
@@ -13,7 +15,7 @@ for file in os.listdir(annotation_dir):
 
     video_name = file.replace("_annt.xml","")
 
-    tree = ET.parse(os.path.join(annotation_dir, file))
+    tree = ET.parse(annotation_dir / file)
     root = tree.getroot()
 
     for track in root.findall("track"):
@@ -37,7 +39,7 @@ for file in os.listdir(annotation_dir):
             label = 1 if crossing == "crossing" else 0
 
             rows.append({
-                "video": video_name.replace("set01_",""),
+                "video": video_name,
                 "frame": frame,
                 "pedestrian_id": attrs["id"],
                 "x1": xtl,
@@ -49,6 +51,6 @@ for file in os.listdir(annotation_dir):
 
 df = pd.DataFrame(rows)
 
-df.to_csv("pie_annotations_clean.csv", index=False)
+df.to_csv(PROJECT_ROOT / "datasets" / "pie_annotations_set01.csv", index=False)
 
 print("Saved cleaned annotations.")

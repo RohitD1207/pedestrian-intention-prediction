@@ -1,0 +1,236 @@
+{
+  "project": "Pedestrian Intention Prediction \u2014 Uncertainty-Aware Evaluation",
+  "seed": 42,
+  "mc_dropout_samples": 30,
+  "dataset": {
+    "features": [
+      272000,
+      16,
+      512
+    ],
+    "unique_pedestrian_ids": 656,
+    "split": {
+      "method": "pedestrian-level",
+      "train": 184672,
+      "validation": 43191,
+      "test": 44137
+    }
+  },
+  "models": {
+    "LSTM": {
+      "best_validation_f1": 0.7276,
+      "baseline_test": {
+        "accuracy": 0.9709,
+        "precision": 0.9159,
+        "recall": 0.9298,
+        "f1": 0.9228,
+        "brier": 0.0261,
+        "ece": 0.0239
+      },
+      "KL_thresholds": {
+        "90": 0.00184521,
+        "95": 0.01416085,
+        "97.5": 0.04213949,
+        "99": 0.07361221,
+        "99.5": 0.09478554
+      },
+      "MD_threshold_95": 42.3619,
+      "uncertainty": {
+        "KL_AUROC": {
+          "value": 0.899,
+          "CI95": [
+            0.8906,
+            0.9071
+          ]
+        },
+        "MD_AUROC": {
+          "value": 0.7244,
+          "CI95": [
+            0.7118,
+            0.7367
+          ]
+        },
+        "KL_minus_MD_AUROC": {
+          "value": 0.1744,
+          "CI95": [
+            0.158,
+            0.191
+          ]
+        }
+      },
+      "selective_prediction": {
+        "baseline": {
+          "risk": 0.0292,
+          "CI95": [
+            0.0276,
+            0.0307
+          ],
+          "coverage": 1.0
+        },
+        "KL_only": {
+          "risk": 0.0191,
+          "CI95": [
+            0.0178,
+            0.0204
+          ],
+          "coverage": 0.9733
+        },
+        "MD_only": {
+          "risk": 0.0264,
+          "CI95": [
+            0.0249,
+            0.028
+          ],
+          "coverage": 0.9648
+        },
+        "KL_and_MD": {
+          "risk": 0.0168,
+          "CI95": [
+            0.0155,
+            0.018
+          ],
+          "coverage": 0.9392
+        }
+      }
+    },
+    "Transformer": {
+      "best_validation_f1": 0.6957,
+      "baseline_test": {
+        "accuracy": 0.9731,
+        "precision": 0.93,
+        "recall": 0.9262,
+        "f1": 0.9281,
+        "brier": 0.0246,
+        "ece": 0.0231
+      },
+      "mc_dropout_test": {
+        "accuracy": 0.973,
+        "precision": 0.9287,
+        "recall": 0.9272,
+        "f1": 0.9279,
+        "brier": 0.0243,
+        "ece": 0.0216,
+        "mean_KL": 0.002872
+      },
+      "KL_thresholds": {
+        "90": 0.00103239,
+        "95": 0.0190575,
+        "97.5": 0.08799922,
+        "99": 0.16139837,
+        "99.5": 0.20116223
+      },
+      "MD_threshold_95": 42.3619,
+      "uncertainty": {
+        "KL_AUROC": {
+          "value": 0.9048,
+          "CI95": [
+            0.8952,
+            0.9137
+          ]
+        },
+        "MD_AUROC": {
+          "value": 0.7432,
+          "CI95": [
+            0.7315,
+            0.7546
+          ]
+        },
+        "KL_minus_MD_AUROC": {
+          "value": 0.1616,
+          "CI95": [
+            0.145,
+            0.1776
+          ]
+        }
+      },
+      "selective_prediction": {
+        "baseline": {
+          "risk": 0.027,
+          "CI95": [
+            0.0255,
+            0.0285
+          ],
+          "coverage": 1.0
+        },
+        "KL_only": {
+          "risk": 0.0176,
+          "CI95": [
+            0.0164,
+            0.0189
+          ],
+          "coverage": 0.9702
+        },
+        "MD_only": {
+          "risk": 0.0244,
+          "CI95": [
+            0.0229,
+            0.0259
+          ],
+          "coverage": 0.9648
+        },
+        "KL_and_MD": {
+          "risk": 0.0152,
+          "CI95": [
+            0.014,
+            0.0164
+          ],
+          "coverage": 0.9364
+        }
+      },
+      "complementarity_95th": {
+        "quadrants": {
+          "low_KL_low_MD": {
+            "n": 41329,
+            "error_rate": 0.0152,
+            "accuracy": 0.9848,
+            "f1": 0.9579
+          },
+          "low_KL_high_MD": {
+            "n": 1492,
+            "error_rate": 0.0838,
+            "accuracy": 0.9162,
+            "f1": 0.7289
+          },
+          "high_KL_low_MD": {
+            "n": 1256,
+            "error_rate": 0.3272,
+            "accuracy": 0.6728,
+            "f1": 0.6247
+          },
+          "high_KL_high_MD": {
+            "n": 60,
+            "error_rate": 0.4167,
+            "accuracy": 0.5833,
+            "f1": 0.1379
+          }
+        },
+        "error_capture": {
+          "total_errors": 1190,
+          "high_KL": 436,
+          "high_MD": 150,
+          "both": 25,
+          "KL_only": 411,
+          "MD_only": 125,
+          "missed_by_both": 629
+        }
+      }
+    }
+  },
+  "key_findings": [
+    "LSTM and Transformer have broadly comparable baseline predictive performance on the common test split.",
+    "KL uncertainty is substantially better than Mahalanobis distance for detecting prediction errors for both architectures.",
+    "Combining KL and Mahalanobis reduces selective risk further than either signal alone.",
+    "The uncertainty behavior is qualitatively consistent across both temporal architectures."
+  ],
+  "reviewer_guardrails": [
+    "Do not call sub-1-percentage-point accuracy differences a strong performance improvement.",
+    "Selective prediction reduces risk among retained predictions; it does not solve the fallback decision for rejected cases.",
+    "Do not present the results as evidence of six-nines autonomous-driving safety.",
+    "Keep recall prominent alongside accuracy, precision, and F1."
+  ],
+  "data_quality_notes": [
+    "Transformer KL thresholds were corrected using its own validation KL distribution; the 95th percentile is 0.01905750.",
+    "The Mahalanobis 95th-percentile threshold is 42.3619 for both models because both use the same ResNet feature space and training split.",
+    "Earlier Transformer threshold-dependent results using the LSTM KL threshold were superseded by the corrected runs."
+  ]
+}

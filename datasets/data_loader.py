@@ -7,9 +7,8 @@ from torchvision.transforms import functional as TF
 
 class PIEDataset(Dataset):
     def __init__(self, annotation_file, crop_dir, sequence_length=16):
-        # We only keep rows where a full sequence exists
         self.annotations = pd.read_csv(annotation_file).to_dict("records")
-        self.crop_dir = crop_dir # This is where "Phase 1" saved the images
+        self.crop_dir = crop_dir 
         self.sequence_length = sequence_length
 
     def __len__(self):
@@ -21,25 +20,18 @@ class PIEDataset(Dataset):
         target_frame = int(row["frame"])
         label = int(row["label"])
         pid = str(row["pedestrian_id"])
-
         sequence = []
         for i in range(self.sequence_length):
             frame_idx = target_frame - (self.sequence_length - 1) + i
-            
-            # Look for the crop
-            img_path = os.path.join(self.crop_dir, video_name, pid, f"{frame_idx:06d}.jpg")
-            
-            image_np = cv2.imread(img_path)
+            img_path = os.path.join(self.crop_dir, video_name, pid, f"{frame_idx:06d}.jpg")       
+            image_np = cv2.imread(img_path) if os.path.exists(img_path) else None
             
             if image_np is None:
-                # FIX: If frame doesn't exist, create a black placeholder
-                # This stops the [WARN] and prevents the crash
                 image = torch.zeros((3, 224, 224))
             else:
-                # Standard processing
                 image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
                 image = torch.from_numpy(image_np).permute(2,0,1).float() / 255.0
-                image = TF.resize(image, (224, 224))
+                image = TF.resize(image, [224, 224])
             
             sequence.append(image)
 

@@ -1,11 +1,16 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from pathlib import Path
 from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_curve, auc)
 from sklearn.calibration import calibration_curve
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+RESULTS_DIR = PROJECT_ROOT / "results"
+RESULTS_DIR.mkdir(exist_ok=True)
+
 # Load the data
-data = np.load("final_results.npz")
+data = np.load(PROJECT_ROOT / "final_results.npz")
 
 # Extract the variables
 y_probs = data['probs']
@@ -35,7 +40,7 @@ def generate_visual_report(y_true, y_probs, kl_scores, md_scores):
     plt.title("Confusion Matrix: Crossing Intent")
     plt.ylabel("Actual")
     plt.xlabel("Predicted")
-    plt.savefig("results/confusion_matrix.png")
+    plt.savefig(RESULTS_DIR / "confusion_matrix.png")
 
     # 3. Uncertainty Distribution Plot (KL vs Prediction)
     plt.figure(figsize=(10, 6))
@@ -45,14 +50,14 @@ def generate_visual_report(y_true, y_probs, kl_scores, md_scores):
     plt.xlabel("Predicted Probability (0=Wait, 1=Cross)")
     plt.ylabel("KL Divergence (Model Confusion)")
     plt.colorbar(label="Actual Label")
-    plt.savefig("results/kl_vs_confidence.png")
+    plt.savefig(RESULTS_DIR / "kl_vs_confidence.png")
 
     # 4. Mahalanobis 'OOD' Histogram
     plt.figure(figsize=(10, 6))
     sns.histplot(md_scores, kde=True, color="purple")
     plt.title("Distribution of Mahalanobis Distance (OOD Scores)")
     plt.xlabel("Distance from 'Normal' Pedestrian Training Distribution")
-    plt.savefig("results/mahalanobis_distribution.png")
+    plt.savefig(RESULTS_DIR / "mahalanobis_distribution.png")
 
     # 5. Reliability Diagram (Calibration Plot)
     prob_true, prob_pred = calibration_curve(y_true, y_probs, n_bins=10)
@@ -64,7 +69,7 @@ def generate_visual_report(y_true, y_probs, kl_scores, md_scores):
     plt.title("Reliability Diagram")
     plt.legend()
     plt.grid()
-    plt.savefig("results/reliability_diagram.png")
+    plt.savefig(RESULTS_DIR / "reliability_diagram.png")
 
     plt.show()
 
@@ -92,7 +97,7 @@ def plot_filtered_reliability(y_true, y_probs, md_scores, threshold=50):
     plt.plot([0, 1], [0, 1], "k--", label="Perfect Calibration")
     plt.title("Impact of Mahalanobis Filtering on Model Reliability")
     plt.legend()
-    plt.savefig("results/reliability_improvement.png")
+    plt.savefig(RESULTS_DIR / "reliability_improvement.png")
     plt.show()
 
 plot_filtered_reliability(y_true, y_probs, md_scores, threshold=30)
@@ -179,7 +184,7 @@ fig.legend(handles, labels, loc='lower center', ncol=2, fontsize=12, frameon=Tru
 
 # Use tight_layout to make sure text doesn't overlap
 plt.tight_layout()
-plt.savefig("results/integrated_safety_analysis.png", bbox_inches='tight', dpi=300)
+plt.savefig(RESULTS_DIR / "integrated_safety_analysis.png", bbox_inches='tight', dpi=300)
 plt.show()
 
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score

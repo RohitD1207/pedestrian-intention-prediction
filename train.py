@@ -5,6 +5,7 @@ from tqdm import tqdm
 import os
 import numpy as np 
 import gc
+from pathlib import Path
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 from datasets.data_loader import PIEDataset
@@ -14,7 +15,8 @@ from models.mc_dropout import monte_carlo_dropout
 
 os.environ["OPENCV_LOG_LEVEL"] = "FATAL" # This silences the warnings
 # Define Constants
-MODEL_PATH = "lstm_model.pt"
+PROJECT_ROOT = Path(__file__).resolve().parent
+MODEL_PATH = PROJECT_ROOT / "lstm_model.pt"
 
 def get_train_statistics(train_features_tensor):
     # Collapse [Samples, 16, 512] -> [Samples, 512] for stability
@@ -37,8 +39,8 @@ def main():
     # Dataset & Loader
     # ------------------------
     dataset = PIEDataset(
-        annotation_file="datasets/pie_annotations_set03.csv",
-        crop_dir="data/PIE_crops"
+        annotation_file=PROJECT_ROOT / "datasets" / "pie_annotations_set01.csv",
+        crop_dir=PROJECT_ROOT / "data" / "PIE_crops"
     )
 
     # Lowering num_workers to 2 to prevent CPU choking
@@ -62,11 +64,14 @@ def main():
     # ------------------------
     # FEATURE EXTRACTION
     # ------------------------
-    if os.path.exists("pie_features.pt"):
+    feature_path = PROJECT_ROOT / "pie_features.pt"
+    label_path = PROJECT_ROOT / "pie_labels.pt"
+    ids_path = PROJECT_ROOT / "pie_ids.pt"
+    if all(path.exists() for path in (feature_path, label_path, ids_path)):
         print("Loading cached features...")
-        features_tensor = torch.load("pie_features.pt", map_location='cpu', weights_only=True)
-        labels_tensor = torch.load("pie_labels.pt", map_location='cpu', weights_only=True)
-        ids = torch.load("pie_ids.pt") 
+        features_tensor = torch.load(feature_path, map_location='cpu', weights_only=True)
+        labels_tensor = torch.load(label_path, map_location='cpu', weights_only=True)
+        ids = torch.load(ids_path, map_location='cpu', weights_only=True)
     else:
         print("Extracting ResNet features from crops...")
         all_features, all_labels, all_ids = [], [], []
@@ -98,9 +103,9 @@ def main():
         labels_tensor = torch.cat(all_labels)
         ids = np.array(all_ids)
 
-        torch.save(features_tensor, "pie_features.pt")
-        torch.save(labels_tensor, "pie_labels.pt")
-        torch.save(ids, "pie_ids.pt")
+        torch.save(features_tensor, feature_path)
+        torch.save(labels_tensor, label_path)
+        torch.save(ids, ids_path)
 
     # ------------------------
     # SPLIT BY PEDESTRIAN ID (Train/Val/Test: 70/15/15)
@@ -252,8 +257,9 @@ def main():
     print(f"Avg KL Divergence (Epistemic): {np.mean(kl_divs):.4f}")
     if md_dist is not None:
         print(f"Avg Mahalanobis Distance (OOD): {np.mean(md_dist):.4f}")
-    np.savez("final_results.npz", probs=mean_preds, kl=kl_divs, md=md_dist, labels=test_labels)
-    print("Results saved to final_results.npz")
+    results_path = PROJECT_ROOT / "final_results.npz"
+    np.savez(results_path, probs=mean_preds, kl=kl_divs, md=md_dist, labels=test_labels)
+    print(f"Results saved to {results_path}")
 
 if __name__ == "__main__":
     main()

@@ -2,6 +2,10 @@ import os
 import cv2
 import pandas as pd
 from tqdm import tqdm
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 def pre_extract_crops(annotation_file, video_dir, output_dir):
     print("Reading CSV...")
@@ -62,9 +66,8 @@ def pre_extract_crops(annotation_file, video_dir, output_dir):
         cap.release()
 
 if __name__ == "__main__":
-    # DOUBLE CHECK THESE PATHS
     pre_extract_crops(
-        annotation_file="datasets/pie_annotations_set03.csv", 
-        video_dir="data/PIE_clips/set03", 
-        output_dir="data/PIE_crops"
+        annotation_file=PROJECT_ROOT / "datasets" / "pie_annotations_set01.csv",
+        video_dir=PROJECT_ROOT / "data" / "PIE_clips" / "set01",
+        output_dir=PROJECT_ROOT / "data" / "PIE_crops"
     )
