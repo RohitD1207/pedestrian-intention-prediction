@@ -8,7 +8,7 @@ class GATModel(nn.Module):
 
     def __init__(
         self,
-        in_channels=3,
+        in_channels=67,
         hidden_channels=64,
         heads=4,
         dropout=0.3

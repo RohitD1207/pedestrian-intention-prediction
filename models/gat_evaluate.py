@@ -22,6 +22,7 @@ from datasets.data_loader import PIEDataset
 from models.pose_extracter import PoseExtractor
 from models.graph_builder import build_graph
 from models.Gat import GATModel
+from models.resnet_encoder import ResNetEncoder
 
 
 BATCH_SIZE = 1
@@ -65,17 +66,37 @@ pose_extractor = PoseExtractor(
     image_size=args.imgsz
 )
 
-model = GATModel()
+resnet = ResNetEncoder().to(DEVICE)
+resnet.eval()
+resnet_projection = torch.nn.Linear(512, 64).to(DEVICE)
 
-model.load_state_dict(
-    torch.load(
-        MODEL_PATH,
-        map_location=DEVICE
-    )
+model = GATModel(in_channels=67).to(DEVICE)
+
+checkpoint = torch.load(
+    MODEL_PATH,
+    map_location=DEVICE,
+    weights_only=True
 )
 
-model = model.to(DEVICE)
+gat_state = checkpoint.get("gat", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+projection_state = checkpoint.get("resnet_projection") if isinstance(checkpoint, dict) else None
+
+try:
+    model.load_state_dict(gat_state)
+    if projection_state is None:
+        raise RuntimeError(
+            "The checkpoint does not contain resnet_projection weights. "
+            "Retrain the GAT model with: python models/train_gat.py"
+        )
+    resnet_projection.load_state_dict(projection_state)
+except RuntimeError as exc:
+    raise RuntimeError(
+        f"Incompatible GAT checkpoint at {MODEL_PATH}. "
+        "Retrain the model with: python models/train_gat.py"
+    ) from exc
+
 model.eval()
+resnet_projection.eval()
 
 
 all_labels = []
@@ -90,7 +111,18 @@ with torch.no_grad():
 
         pose = pose_extractor.extract(frames[0])
 
-        node_features, edge_index = build_graph(pose)
+        with torch.no_grad():
+            visual_features = resnet(frames[0].to(DEVICE))
+            visual_features = visual_features.squeeze(-1).squeeze(-1)
+            visual_features = resnet_projection(visual_features)
+            visual_features = visual_features.unsqueeze(1).expand(-1, 17, -1)
+
+        fused_features = torch.cat(
+            [pose.to(DEVICE), visual_features],
+            dim=-1
+        )
+
+        node_features, edge_index = build_graph(fused_features)
         node_features = node_features.to(DEVICE)
         edge_index = edge_index.to(DEVICE)
 
@@ -168,7 +200,7 @@ results = {
 }
 
 np.save(
-    "gat_results.npy",
+    PROJECT_ROOT / "gat_results.npy",
     np.array(results, dtype=object),
     allow_pickle=True
 )

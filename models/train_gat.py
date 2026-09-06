@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-
+from models.resnet_encoder import ResNetEncoder
 from datasets.data_loader import PIEDataset
 from models.pose_extracter import PoseExtractor
 from models.graph_builder import build_graph
@@ -75,12 +75,15 @@ pose_extractor = PoseExtractor(
 )
 
 
-model = GATModel().to(DEVICE)
+resnet = ResNetEncoder().to(DEVICE)
+resnet.eval()
+resnet_projection = nn.Linear(512, 64).to(DEVICE)
+model = GATModel(in_channels=67).to(DEVICE)
 
 criterion = nn.CrossEntropyLoss()
 
 optimizer = Adam(
-    model.parameters(),
+    list(model.parameters()) + list(resnet_projection.parameters()),
     lr=LEARNING_RATE
 )
 
@@ -102,7 +105,21 @@ for epoch in range(EPOCHS):
 
         pose = pose_extractor.extract(sequence[0])
 
-        node_features, edge_index = build_graph(pose)
+        with torch.no_grad():
+            visual_features = resnet(sequence[0].to(DEVICE))
+
+        visual_features = visual_features.squeeze(-1).squeeze(-1)
+
+        visual_features = resnet_projection(visual_features)
+
+        visual_features = visual_features.unsqueeze(1).expand(-1, 17, -1)
+
+        fused_features = torch.cat(
+            [pose.to(DEVICE), visual_features],
+            dim=-1
+        )
+
+        node_features, edge_index = build_graph(fused_features)
 
         node_features = node_features.to(DEVICE)
         edge_index = edge_index.to(DEVICE)
@@ -147,10 +164,19 @@ for epoch in range(EPOCHS):
         for sequence, labels, _ in val_loader:
 
             label = labels.long().to(DEVICE)
-
             pose = pose_extractor.extract(sequence[0])
 
-            node_features, edge_index = build_graph(pose)
+            visual_features = resnet(sequence[0].to(DEVICE))
+            visual_features = visual_features.squeeze(-1).squeeze(-1)
+            visual_features = resnet_projection(visual_features)
+            visual_features = visual_features.unsqueeze(1).expand(-1, 17, -1)
+
+            fused_features = torch.cat(
+                [pose.to(DEVICE), visual_features],
+                dim=-1
+            )
+
+            node_features, edge_index = build_graph(fused_features)
 
             node_features = node_features.to(DEVICE)
             edge_index = edge_index.to(DEVICE)
@@ -187,9 +213,12 @@ for epoch in range(EPOCHS):
         best_val_accuracy = val_accuracy
 
         torch.save(
-            model.state_dict(),
-            MODEL_PATH
-        )
+                {
+                    "gat": model.state_dict(),
+                    "resnet_projection": resnet_projection.state_dict()
+                },
+                MODEL_PATH
+            )
 
 
 print("\nTraining completed.")
